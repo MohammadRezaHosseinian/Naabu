@@ -8,11 +8,12 @@ import (
 	"os/user"
 	"time"
 
+	"naabu-dev/internal/testutils"
+	"naabu-dev/pkg/privileges"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/runner"
+
 	"github.com/armon/go-socks5"
-	"github.com/projectdiscovery/naabu/v2/internal/testutils"
-	"github.com/projectdiscovery/naabu/v2/pkg/privileges"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/runner"
 )
 
 var libraryTestcases = map[string]testutils.TestCase{
