@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/privileges"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
+	"naabu-dev/pkg/privileges"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/scan"
+
 	"github.com/projectdiscovery/networkpolicy"
 	"github.com/projectdiscovery/utils/env"
 	fileutil "github.com/projectdiscovery/utils/file"

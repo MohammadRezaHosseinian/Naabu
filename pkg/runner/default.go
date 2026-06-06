@@ -3,7 +3,7 @@ package runner
 import (
 	"time"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
+	"naabu-dev/pkg/scan"
 )
 
 const (

@@ -10,14 +10,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/prediction"
+	"naabu-dev/pkg/protocol"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/scan"
+
 	"github.com/projectdiscovery/blackrock"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/mapcidr"
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/prediction"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
 )
 
 // runPredictiveScan replaces the Blackrock scan loop with a priority-queue

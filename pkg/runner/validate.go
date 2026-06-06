@@ -8,9 +8,10 @@ import (
 
 	"errors"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/privileges"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/privileges"
+	"naabu-dev/pkg/scan"
+
 	"github.com/projectdiscovery/utils/errkit"
 	fileutil "github.com/projectdiscovery/utils/file"
 	iputil "github.com/projectdiscovery/utils/ip"

@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"naabu-dev/pkg/protocol"
+
 	"github.com/miekg/dns"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
 )
 
 const (

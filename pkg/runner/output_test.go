@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/protocol"
+
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3,10 +3,11 @@ package runner
 import (
 	"testing"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/protocol"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/scan"
+
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3,8 +3,9 @@ package runner
 import (
 	"testing"
 
+	"naabu-dev/pkg/scan"
+
 	"github.com/projectdiscovery/dnsx/libs/dnsx"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

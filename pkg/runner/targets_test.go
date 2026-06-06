@@ -4,8 +4,9 @@ import (
 	"log"
 	"testing"
 
+	"naabu-dev/pkg/scan"
+
 	"github.com/projectdiscovery/ipranger"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
 	"github.com/stretchr/testify/require"
 )
 

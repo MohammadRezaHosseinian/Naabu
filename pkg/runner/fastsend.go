@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"net"
 
+	"naabu-dev/pkg/scan"
+
 	"github.com/Mzack9999/gopacket/rawsend"
 	"github.com/projectdiscovery/mapcidr"
-	"github.com/projectdiscovery/naabu/v2/pkg/scan"
 )
 
 // SYNSender builds and sends raw TCP SYN packets without gopacket
