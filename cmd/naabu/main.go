@@ -57,6 +57,16 @@
 //		}
 //	}
 //}
+// cmd/naabu/main.go  (enhanced fork)
+// Drop-in replacement for the original main.go.
+//
+// New capabilities:
+//   • Smart target parsing  — accepts ip:port, https://url, hostname, CIDR
+//   • Per-port banner grab  — protocol-aware, TLS-capable
+//   • Rich terminal display — coloured, structured, human-friendly
+//   • Service detection     — SSH, HTTP, FTP, Redis, MongoDB, …
+//   • Vulnerability scanner — local CVE signature DB, exposure checks
+//   • Full scan map         — aggregated host/port/service/vuln table at end
 
 package main
 
@@ -69,20 +79,18 @@ import (
 	"syscall"
 	"time"
 
+	"naabu-dev/internal/pdcp"
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/protocol"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/runner"
+	"naabu-dev/pkg/target"
+	"naabu-dev/pkg/vuln"
+
 	"github.com/logrusorgru/aurora"
 	_ "github.com/projectdiscovery/fdmax/autofdmax"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/naabu/v2/internal/pdcp"
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/runner"
 	pdcpauth "github.com/projectdiscovery/utils/auth/pdcp"
-
-	// Our enhancements
-	enhrunner "github.com/MohammadRezaHosseinian/Naabu/pkg/runner"
-	"github.com/MohammadRezaHosseinian/Naabu/pkg/target"
-	"github.com/MohammadRezaHosseinian/Naabu/pkg/vuln"
 )
 
 func main() {
@@ -95,14 +103,12 @@ func main() {
 		for _, e := range errs {
 			gologger.Warning().Msgf("Target parse warning: %s", e)
 		}
-		// Re-write hosts as plain hostnames; keep track of explicit ports
 		var cleanHosts []string
 		for _, t := range targets {
 			cleanHosts = append(cleanHosts, t.Host)
-			// If user said https://host:8443 and no port flag was set, inject it
-			if t.Port > 0 && options.Ports == "" {
+			// Inject port derived from URL scheme (e.g. https://host → port 443)
+			if t.Port > 0 {
 				gologger.Info().Msgf("Derived port %d from target %q", t.Port, t.Raw)
-				// Append to explicit port list (comma-separated)
 				if options.Ports != "" {
 					options.Ports += fmt.Sprintf(",%d", t.Port)
 				} else {
@@ -110,21 +116,20 @@ func main() {
 				}
 			}
 		}
-		// Replace the host list with normalised values
 		if len(cleanHosts) > 0 {
 			options.Host = cleanHosts
 		}
 	}
 
-	// ── Scan map (accumulates all results) ────────────────────────────────────
-	scanMap := enhrunner.NewScanMap()
-
-	// ── Wrap OnResult with our enhanced callback ──────────────────────────────
+	// ── Build scan map and wrap OnResult ─────────────────────────────────────
+	// runner.NewScanMap, runner.EnhancedOnResult, runner.AllFindings are all
+	// defined in pkg/runner/enhance.go — same package, no alias needed.
+	scanMap := runner.NewScanMap()
 	grabTimeout := 5 * time.Second
-	originalOnResult := options.OnResult // may be nil
-	options.OnResult = enhrunner.EnhancedOnResult(originalOnResult, options.NoColor, grabTimeout)
+	originalOnResult := options.OnResult
+	options.OnResult = runner.EnhancedOnResult(originalOnResult, options.NoColor, grabTimeout)
 
-	// ── Local results file upload path (unchanged from upstream) ─────────────
+	// ── Local results file upload (unchanged from upstream) ───────────────────
 	if options.AssetFileUpload != "" {
 		_ = setupOptionalAssetUpload(options)
 		file, err := os.Open(options.AssetFileUpload)
@@ -167,7 +172,6 @@ func main() {
 				}},
 			})
 		}
-		// Print final summaries
 		printFinalSummaries(scanMap, options.NoColor)
 		options.OnClose()
 		return
@@ -215,7 +219,6 @@ func main() {
 		gologger.Fatal().Msgf("Could not run enumeration: %s\n", err)
 	}
 
-	// ── Final summaries ───────────────────────────────────────────────────────
 	printFinalSummaries(scanMap, options.NoColor)
 
 	defer func() {
@@ -228,10 +231,10 @@ func main() {
 	}()
 }
 
-// printFinalSummaries prints the scan map and vulnerability summary.
-func printFinalSummaries(scanMap *enhrunner.ScanMap, noColor bool) {
+// printFinalSummaries renders the scan map + vuln summary after enumeration.
+func printFinalSummaries(scanMap *runner.ScanMap, noColor bool) {
 	scanMap.PrintMap(noColor)
-	findings := enhrunner.AllFindings()
+	findings := runner.AllFindings()
 	vuln.PrintSummary(findings, noColor)
 }
 
