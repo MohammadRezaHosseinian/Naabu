@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
+	"naabu-dev/pkg/protocol"
 )
 
 type Port struct {
