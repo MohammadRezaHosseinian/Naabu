@@ -63,9 +63,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/logrusorgru/aurora"
 	_ "github.com/projectdiscovery/fdmax/autofdmax"
@@ -76,29 +78,65 @@ import (
 	"github.com/projectdiscovery/naabu/v2/pkg/result"
 	"github.com/projectdiscovery/naabu/v2/pkg/runner"
 	pdcpauth "github.com/projectdiscovery/utils/auth/pdcp"
+
+	// Our enhancements
+	enhrunner "github.com/MohammadRezaHosseinian/Naabu/pkg/runner"
+	"github.com/MohammadRezaHosseinian/Naabu/pkg/target"
+	"github.com/MohammadRezaHosseinian/Naabu/pkg/vuln"
 )
 
 func main() {
-	// Parse the command line flags and read config files
+	// ── Parse options (same as upstream) ─────────────────────────────────────
 	options := runner.ParseOptions()
 
-	// validation for local results file upload
+	// ── Pre-process hosts: resolve url / ip:port formats ─────────────────────
+	if len(options.Host) > 0 {
+		targets, errs := target.ParseAll([]string(options.Host))
+		for _, e := range errs {
+			gologger.Warning().Msgf("Target parse warning: %s", e)
+		}
+		// Re-write hosts as plain hostnames; keep track of explicit ports
+		var cleanHosts []string
+		for _, t := range targets {
+			cleanHosts = append(cleanHosts, t.Host)
+			// If user said https://host:8443 and no port flag was set, inject it
+			if t.Port > 0 && options.Ports == "" {
+				gologger.Info().Msgf("Derived port %d from target %q", t.Port, t.Raw)
+				// Append to explicit port list (comma-separated)
+				if options.Ports != "" {
+					options.Ports += fmt.Sprintf(",%d", t.Port)
+				} else {
+					options.Ports = fmt.Sprintf("%d", t.Port)
+				}
+			}
+		}
+		// Replace the host list with normalised values
+		if len(cleanHosts) > 0 {
+			options.Host = cleanHosts
+		}
+	}
+
+	// ── Scan map (accumulates all results) ────────────────────────────────────
+	scanMap := enhrunner.NewScanMap()
+
+	// ── Wrap OnResult with our enhanced callback ──────────────────────────────
+	grabTimeout := 5 * time.Second
+	originalOnResult := options.OnResult // may be nil
+	options.OnResult = enhrunner.EnhancedOnResult(originalOnResult, options.NoColor, grabTimeout)
+
+	// ── Local results file upload path (unchanged from upstream) ─────────────
 	if options.AssetFileUpload != "" {
 		_ = setupOptionalAssetUpload(options)
 		file, err := os.Open(options.AssetFileUpload)
 		if err != nil {
 			gologger.Fatal().Msgf("Could not open file: %s\n", err)
 		}
-		defer func() {
-			if err := file.Close(); err != nil {
-				gologger.Error().Msgf("Could not close file: %s\n", err)
-			}
-		}()
+		defer file.Close()
+
 		dec := json.NewDecoder(file)
 		for dec.More() {
 			var r runner.Result
-			err := dec.Decode(&r)
-			if err != nil {
+			if err := dec.Decode(&r); err != nil {
 				gologger.Fatal().Msgf("Could not decode jsonl file: %s\n", err)
 			}
 			service := &port.Service{
@@ -121,42 +159,39 @@ func main() {
 			options.OnResult(&result.HostResult{
 				Host: r.Host,
 				IP:   r.IP,
-				Ports: []*port.Port{
-					{
-						Port:     r.Port,
-						Protocol: protocol.ParseProtocol(r.Protocol),
-						TLS:      r.TLS,
-						Service:  service,
-					},
-				},
+				Ports: []*port.Port{{
+					Port:     r.Port,
+					Protocol: protocol.ParseProtocol(r.Protocol),
+					TLS:      r.TLS,
+					Service:  service,
+				}},
 			})
 		}
+		// Print final summaries
+		printFinalSummaries(scanMap, options.NoColor)
 		options.OnClose()
 		return
 	}
 
-	// setup optional asset upload
+	// ── Setup optional PDCP asset upload ─────────────────────────────────────
 	_ = setupOptionalAssetUpload(options)
 
+	// ── Create runner ─────────────────────────────────────────────────────────
 	naabuRunner, err := runner.NewRunner(options)
 	if err != nil {
 		gologger.Fatal().Msgf("Could not create runner: %s\n", err)
 	}
 
-	// Setup context with cancelation
+	// ── Signal handling ───────────────────────────────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// Setup signal handling
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
 		sig := <-c
 		gologger.Info().Msgf("Received signal: %s, exiting gracefully...\n", sig)
-
-		// Cancel context to stop ongoing tasks
 		cancel()
 
-		// Try to save resume config if needed
 		if options.ResumeCfg != nil && options.ResumeCfg.ShouldSaveResume() {
 			gologger.Info().Msgf("Creating resume file: %s\n", runner.DefaultResumeFilePath())
 			if err := options.ResumeCfg.SaveResumeConfig(); err != nil {
@@ -164,54 +199,60 @@ func main() {
 			}
 		}
 
-		// Show scan result if runner is available
+		printFinalSummaries(scanMap, options.NoColor)
+
 		if naabuRunner != nil {
 			naabuRunner.ShowScanResultOnExit()
-
 			if err := naabuRunner.Close(); err != nil {
 				gologger.Error().Msgf("Couldn't close runner: %s\n", err)
 			}
 		}
-
-		// Final flush if gologger has a Close method (placeholder if exists)
-		// Example: gologger.Close()
-
 		os.Exit(1)
 	}()
 
-	// Start enumeration
+	// ── Run port enumeration ──────────────────────────────────────────────────
 	if err := naabuRunner.RunEnumeration(ctx); err != nil {
 		gologger.Fatal().Msgf("Could not run enumeration: %s\n", err)
 	}
+
+	// ── Final summaries ───────────────────────────────────────────────────────
+	printFinalSummaries(scanMap, options.NoColor)
 
 	defer func() {
 		if err := naabuRunner.Close(); err != nil {
 			gologger.Error().Msgf("Couldn't close runner: %s\n", err)
 		}
-		// On successful execution, cleanup resume config if needed
 		if options.ResumeCfg != nil {
 			options.ResumeCfg.CleanupResumeConfig()
 		}
 	}()
 }
 
-// setupOptionalAssetUpload is used to setup optional asset upload
-// this is optional and only initialized when explicitly enabled
+// printFinalSummaries prints the scan map and vulnerability summary.
+func printFinalSummaries(scanMap *enhrunner.ScanMap, noColor bool) {
+	scanMap.PrintMap(noColor)
+	findings := enhrunner.AllFindings()
+	vuln.PrintSummary(findings, noColor)
+}
+
+// setupOptionalAssetUpload is unchanged from upstream.
 func setupOptionalAssetUpload(opts *runner.Options) *pdcp.UploadWriter {
 	var mustEnable bool
-	// enable on multiple conditions
 	if opts.AssetUpload || opts.AssetID != "" || opts.AssetName != "" || pdcp.EnableCloudUpload {
 		mustEnable = true
 	}
+
 	a := aurora.NewAurora(!opts.NoColor)
 	if !mustEnable {
 		if !pdcp.HideAutoSaveMsg {
-			gologger.Print().Msgf("[%s] UI Dashboard is disabled, Use -dashboard option to enable", a.BrightYellow("WRN"))
+			gologger.Print().Msgf("[%s] UI Dashboard is disabled, Use -dashboard option to enable",
+				a.BrightYellow("WRN"))
 		}
 		return nil
 	}
 
 	gologger.Info().Msgf("To view results in UI dashboard, visit https://cloud.projectdiscovery.io/assets upon completion.")
+
 	h := &pdcpauth.PDCPCredHandler{}
 	creds, err := h.GetCreds()
 	if err != nil {
@@ -221,6 +262,7 @@ func setupOptionalAssetUpload(opts *runner.Options) *pdcp.UploadWriter {
 		pdcpauth.CheckNValidateCredentials("naabu")
 		return nil
 	}
+
 	writer, err := pdcp.NewUploadWriterCallback(context.Background(), creds)
 	if err != nil {
 		gologger.Error().Msgf("failed to setup UI dashboard: %s", err)
@@ -228,18 +270,16 @@ func setupOptionalAssetUpload(opts *runner.Options) *pdcp.UploadWriter {
 	}
 	if writer == nil {
 		gologger.Error().Msgf("something went wrong, could not setup UI dashboard")
+		return nil
 	}
+
 	opts.OnResult = writer.GetWriterCallback()
-	opts.OnClose = func() {
-		writer.Close()
-	}
-	// add additional metadata
+	opts.OnClose = func() { writer.Close() }
+
 	if opts.AssetID != "" {
-		// silently ignore
 		writer.SetAssetID(opts.AssetID)
 	}
 	if opts.AssetName != "" {
-		// silently ignore
 		writer.SetAssetGroupName(opts.AssetName)
 	}
 	if opts.TeamID != "" {
