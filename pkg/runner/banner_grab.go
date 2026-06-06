@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -258,7 +257,7 @@ func truncate(s string, max int) string {
 func httpProbeWithBody(conn net.Conn, host string, timeout time.Duration) string {
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
-		log.Printf("[DEBUG] NewRequest error for %s: %v", host, err)
+		//log.Printf("[DEBUG] NewRequest error for %s: %v", host, err)
 		return ""
 	}
 
@@ -269,21 +268,21 @@ func httpProbeWithBody(conn net.Conn, host string, timeout time.Duration) string
 	conn.SetDeadline(time.Now().Add(timeout))
 
 	if err := req.Write(conn); err != nil {
-		log.Printf("[DEBUG] Write error for %s: %v", host, err)
+		//log.Printf("[DEBUG] Write error for %s: %v", host, err)
 		return ""
 	}
 
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
-		log.Printf("[DEBUG] ReadResponse error for %s: %v", host, err)
+		//log.Printf("[DEBUG] ReadResponse error for %s: %v", host, err)
 		return ""
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
-		log.Printf("[DEBUG] ReadAll error for %s: %v", host, err)
+		//log.Printf("[DEBUG] ReadAll error for %s: %v", host, err)
 		return ""
 	}
 
@@ -313,7 +312,7 @@ func httpProbeWithBody(conn net.Conn, host string, timeout time.Duration) string
 		result += fmt.Sprintf(" [Title: %s]", title)
 	}
 
-	log.Printf("[DEBUG] Success for %s: %s", host, result)
+	//log.Printf("[DEBUG] Success for %s: %s", host, result)
 	return result
 }
 
@@ -347,7 +346,7 @@ func grabHTTPSBannerWithBody(ip string, port int, timeout time.Duration) string 
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
-		log.Printf("[DEBUG] ReadResponse error for %s: %v", addr, err)
+		//log.Printf("[DEBUG] ReadResponse error for %s: %v", addr, err)
 
 		return ""
 	}
