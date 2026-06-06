@@ -1,0 +1,9 @@
+command for build:
+$env:CGO_ENABLED="0"
+go build -v -ldflags "-s -w" -o naabu.exe cmd/naabu/main.go
+
+
+command for run:
+.\naabu.exe  -host hackerone.com -banner
+
+.\naabu.exe  -host hackerone.com -p 80,443 -banner
