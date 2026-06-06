@@ -11,13 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/protocol"
+	"naabu-dev/pkg/result"
+	"naabu-dev/pkg/utils/limits"
+
 	"github.com/projectdiscovery/cdncheck"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/ipranger"
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
-	"github.com/projectdiscovery/naabu/v2/pkg/utils/limits"
 	"github.com/projectdiscovery/networkpolicy"
 	envutil "github.com/projectdiscovery/utils/env"
 	netutil "github.com/projectdiscovery/utils/net"

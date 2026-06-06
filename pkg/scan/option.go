@@ -3,7 +3,8 @@ package scan
 import (
 	"time"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
+	"naabu-dev/pkg/result"
+
 	"github.com/projectdiscovery/networkpolicy"
 )
 

@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"naabu-dev/pkg/port"
+	"naabu-dev/pkg/protocol"
+	"naabu-dev/pkg/result"
+
 	"github.com/projectdiscovery/ipranger"
-	"github.com/projectdiscovery/naabu/v2/pkg/port"
-	"github.com/projectdiscovery/naabu/v2/pkg/protocol"
-	"github.com/projectdiscovery/naabu/v2/pkg/result"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,10 +89,10 @@ func TestCloseWaitsForWorkers(t *testing.T) {
 
 func TestSequentialScannerReuse(t *testing.T) {
 	handler := &ListenHandler{
-		Phase:              &Phase{},
-		TcpChan:            make(chan *PkgResult, chanSize),
-		UdpChan:            make(chan *PkgResult, chanSize),
-		HostDiscoveryChan:  make(chan *PkgResult, chanSize),
+		Phase:             &Phase{},
+		TcpChan:           make(chan *PkgResult, chanSize),
+		UdpChan:           make(chan *PkgResult, chanSize),
+		HostDiscoveryChan: make(chan *PkgResult, chanSize),
 	}
 
 	for i := 0; i < 5; i++ {
@@ -113,10 +114,10 @@ func TestSequentialScannerReuse(t *testing.T) {
 
 func TestWorkersExitBeforeHandlerRelease(t *testing.T) {
 	handler := &ListenHandler{
-		Phase:              &Phase{},
-		TcpChan:            make(chan *PkgResult, chanSize),
-		UdpChan:            make(chan *PkgResult, chanSize),
-		HostDiscoveryChan:  make(chan *PkgResult, chanSize),
+		Phase:             &Phase{},
+		TcpChan:           make(chan *PkgResult, chanSize),
+		UdpChan:           make(chan *PkgResult, chanSize),
+		HostDiscoveryChan: make(chan *PkgResult, chanSize),
 	}
 
 	var workerExitedFirst atomic.Bool
@@ -178,10 +179,10 @@ func TestNoResponseLostBetweenSequentialScanners(t *testing.T) {
 
 func TestConcurrentCloseAndCreate(t *testing.T) {
 	handler := &ListenHandler{
-		Phase:              &Phase{},
-		TcpChan:            make(chan *PkgResult, chanSize),
-		UdpChan:            make(chan *PkgResult, chanSize),
-		HostDiscoveryChan:  make(chan *PkgResult, chanSize),
+		Phase:             &Phase{},
+		TcpChan:           make(chan *PkgResult, chanSize),
+		UdpChan:           make(chan *PkgResult, chanSize),
+		HostDiscoveryChan: make(chan *PkgResult, chanSize),
 	}
 
 	const iterations = 20

@@ -3,8 +3,9 @@ package scan
 import (
 	"testing"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/privileges"
-	"github.com/projectdiscovery/naabu/v2/pkg/routing"
+	"naabu-dev/pkg/privileges"
+	"naabu-dev/pkg/routing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

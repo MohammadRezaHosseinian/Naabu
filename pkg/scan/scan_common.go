@@ -4,9 +4,10 @@ import (
 	"errors"
 	"net"
 
+	"naabu-dev/pkg/privileges"
+	"naabu-dev/pkg/routing"
+
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/naabu/v2/pkg/privileges"
-	"github.com/projectdiscovery/naabu/v2/pkg/routing"
 	"golang.org/x/net/icmp"
 )
 
