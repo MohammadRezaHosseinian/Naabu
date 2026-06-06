@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MohammadRezaHosseinian/Naabu/pkg/banner"
+	"naabu-dev/pkg/banner"
 )
 
 // ─── Types ────────────────────────────────────────────────────────────────────
