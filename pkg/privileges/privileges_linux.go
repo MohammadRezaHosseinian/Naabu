@@ -6,7 +6,8 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/projectdiscovery/naabu/v2/pkg/israce"
+	"naabu-dev/pkg/israce"
+
 	"golang.org/x/sys/unix"
 )
 
