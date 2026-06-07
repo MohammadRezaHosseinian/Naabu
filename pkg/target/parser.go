@@ -2,15 +2,14 @@
 // Normalises the many forms a user might specify a target into a
 // canonical (host, port) pair that Naabu can understand.
 //
-// Supported input formats
-// ───────────────────────
-//   192.168.1.1            → host only, no port override
-//   192.168.1.1:8080       → host + explicit port
-//   http://example.com     → scheme → derive port 80
-//   https://example.com    → scheme → derive port 443
+// Supported input formats:
+//   192.168.1.1              → host only, no port override
+//   192.168.1.1:8080         → host + explicit port
+//   http://example.com       → scheme derives port 80
+//   https://example.com      → scheme derives port 443
 //   https://example.com:8443/path → host + explicit port
-//   example.com            → hostname only
-//   192.168.1.0/24         → CIDR block (returned as-is for Naabu)
+//   example.com              → hostname only
+//   192.168.1.0/24           → CIDR block (passed through to Naabu)
 
 package target
 
@@ -24,13 +23,12 @@ import (
 
 // Target represents one parsed scan target.
 type Target struct {
-	Raw      string // original string the user provided
-	Host     string // hostname or IP (no port)
-	IP       string // resolved IP (may be empty until resolved)
-	Port     int    // explicit port, 0 if none specified
-	Scheme   string // "http", "https", or ""
-	IsCIDR   bool   // true if it was a CIDR notation
-	Original string // same as Raw; handy alias
+	Raw    string // original string the user provided
+	Host   string // hostname or IP (no port)
+	IP     string // resolved IP (empty until DNS resolved externally)
+	Port   int    // explicit port, 0 if none specified
+	Scheme string // "http", "https", or ""
+	IsCIDR bool   // true if CIDR notation
 }
 
 // Parse converts a raw target string into a Target.
@@ -41,7 +39,7 @@ func Parse(raw string) (*Target, error) {
 		return nil, fmt.Errorf("empty target")
 	}
 
-	t := &Target{Raw: raw, Original: raw}
+	t := &Target{Raw: raw}
 
 	// ── CIDR ────────────────────────────────────────────────────────────────
 	if _, _, err := net.ParseCIDR(raw); err == nil {
@@ -57,9 +55,8 @@ func Parse(raw string) (*Target, error) {
 			return nil, fmt.Errorf("invalid URL %q: %w", raw, err)
 		}
 		t.Scheme = u.Scheme
-		hostname := u.Hostname()
+		t.Host = u.Hostname()
 		portStr := u.Port()
-
 		if portStr != "" {
 			p, err := strconv.Atoi(portStr)
 			if err != nil {
@@ -69,12 +66,10 @@ func Parse(raw string) (*Target, error) {
 		} else {
 			t.Port = defaultPortForScheme(u.Scheme)
 		}
-		t.Host = hostname
 		return t, nil
 	}
 
-	// ── host:port (no scheme) ────────────────────────────────────────────────
-	// Be careful: IPv6 addresses look like [::1]:80
+	// ── host:port — handles IPv6 [::1]:80 correctly ──────────────────────────
 	if h, p, err := net.SplitHostPort(raw); err == nil {
 		port, err := strconv.Atoi(p)
 		if err != nil {
@@ -90,12 +85,14 @@ func Parse(raw string) (*Target, error) {
 	return t, nil
 }
 
-// ParseAll parses a list of raw target strings and returns the valid ones.
-// Errors are collected and returned alongside valid targets.
+// ParseAll parses a slice of raw target strings.
+// Both valid targets and errors are returned so callers can log warnings
+// without stopping the scan.
 func ParseAll(raws []string) ([]*Target, []error) {
 	var targets []*Target
 	var errs []error
 	seen := map[string]bool{}
+
 	for _, r := range raws {
 		t, err := Parse(r)
 		if err != nil {
@@ -104,25 +101,12 @@ func ParseAll(raws []string) ([]*Target, []error) {
 		}
 		key := t.Host + ":" + strconv.Itoa(t.Port)
 		if seen[key] {
-			continue
+			continue // deduplicate
 		}
 		seen[key] = true
 		targets = append(targets, t)
 	}
 	return targets, errs
-}
-
-// NaabuHostArgs converts a slice of Targets into the format Naabu expects.
-// Targets with explicit ports have their port stored in ExplicitPorts.
-func NaabuHostArgs(targets []*Target) (hosts []string, explicitPorts map[string]int) {
-	explicitPorts = map[string]int{}
-	for _, t := range targets {
-		hosts = append(hosts, t.Host)
-		if t.Port > 0 {
-			explicitPorts[t.Host] = t.Port
-		}
-	}
-	return
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
