@@ -67,6 +67,16 @@
 //   • Service detection     — SSH, HTTP, FTP, Redis, MongoDB, …
 //   • Vulnerability scanner — local CVE signature DB, exposure checks
 //   • Full scan map         — aggregated host/port/service/vuln table at end
+// cmd/naabu/main.go  (enhanced fork)
+// Drop-in replacement for the original main.go.
+//
+// New capabilities:
+//   • Smart target parsing  — accepts ip:port, https://url, hostname, CIDR
+//   • Per-port banner grab  — protocol-aware, TLS-capable
+//   • Rich terminal display — coloured, structured, human-friendly
+//   • Service detection     — SSH, HTTP, FTP, Redis, MongoDB, …
+//   • Vulnerability scanner — local CVE signature DB, exposure checks
+//   • Full scan map         — aggregated host/port/service/vuln table at end
 
 package main
 
