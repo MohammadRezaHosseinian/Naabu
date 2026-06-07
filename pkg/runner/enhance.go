@@ -4,8 +4,7 @@
 //   - ScanMap           — aggregates all host/port/service/vuln results
 //   - AllFindings()     — returns accumulated vulnerability findings
 //
-// This file belongs to package runner (same package as the upstream runner).
-// Place it at:  pkg/runner/enhance.go
+// Place at: pkg/runner/enhance.go  (same package as upstream runner files)
 
 package runner
 
@@ -14,12 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/projectdiscovery/gologger"
 	naabuResult "naabu-dev/pkg/result"
 
-	"naabu-dev/pkg/banner"
+	"github.com/projectdiscovery/gologger"
 
-	// New sub-packages added by this fork
+	// Aliased to "bgrabber" because the upstream runner package already
+	// uses "banner" as a field/variable name internally — a plain
+	// import alias avoids the "collides with name declared in this package" error.
+	bgrabber "naabu-dev/pkg/banner"
 	"naabu-dev/pkg/vuln"
 )
 
@@ -53,12 +54,6 @@ func AllFindings() []vuln.Finding {
 //  2. Prints the banner as a rich coloured terminal block
 //  3. Matches the banner against the CVE / exposure vulnerability database
 //  4. Logs inline warnings for any findings
-//
-// Parameters:
-//
-//	original    – caller's existing OnResult (may be nil)
-//	noColor     – when true, suppress ANSI colour codes
-//	grabTimeout – max time to spend per banner grab
 func EnhancedOnResult(
 	original func(*naabuResult.HostResult),
 	noColor bool,
@@ -75,20 +70,16 @@ func EnhancedOnResult(
 			original(hr)
 		}
 
-		// Grab banners and scan vulns concurrently — one goroutine per port.
+		// One goroutine per port — banner grab + vuln scan run concurrently.
 		var wg sync.WaitGroup
 		for _, p := range hr.Ports {
 			wg.Add(1)
 			go func(portNum int, proto string, isTLS bool) {
 				defer wg.Done()
 
-				// 1. Banner grab
-				si := banner.Grab(hr.Host, hr.IP, portNum, proto, isTLS, grabTimeout)
+				si := bgrabber.Grab(hr.Host, hr.IP, portNum, proto, isTLS, grabTimeout)
+				bgrabber.Print(si, noColor)
 
-				// 2. Render banner to terminal
-				banner.Print(si, noColor)
-
-				// 3. Vulnerability match
 				findings := vuln.Scan(si)
 				if len(findings) > 0 {
 					AddFindings(findings)
@@ -119,10 +110,11 @@ type ScanMap struct {
 }
 
 // HostScanResult holds all services and vulnerability findings for one host.
+// Uses bgrabber.ServiceInfo (the aliased banner package type).
 type HostScanResult struct {
 	Host     string
 	IP       string
-	Services []*banner.ServiceInfo
+	Services []*bgrabber.ServiceInfo
 	Findings []vuln.Finding
 }
 
@@ -132,7 +124,7 @@ func NewScanMap() *ScanMap {
 }
 
 // Add stores a ServiceInfo (and associated findings) for a host.
-func (m *ScanMap) Add(si *banner.ServiceInfo, findings []vuln.Finding) {
+func (m *ScanMap) Add(si *bgrabber.ServiceInfo, findings []vuln.Finding) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -155,7 +147,7 @@ func (m *ScanMap) All() []*HostScanResult {
 	return out
 }
 
-// PrintMap prints the full scan map table: host → ports → services → vuln count.
+// PrintMap prints the full scan map: host → ports → services → vuln count.
 func (m *ScanMap) PrintMap(noColor bool) {
 	results := m.All()
 	if len(results) == 0 {
@@ -176,7 +168,6 @@ func (m *ScanMap) PrintMap(noColor bool) {
 
 	for _, r := range results {
 		fmt.Printf("\n%s  (IP: %s)\n", col("\033[1;37m", r.Host), r.IP)
-
 		for _, svc := range r.Services {
 			vulnCount := 0
 			for _, f := range r.Findings {
