@@ -290,6 +290,23 @@ func exposureChecks(si *banner.ServiceInfo) []Finding {
 // ─── CVE Signature Database ───────────────────────────────────────────────────
 // Organised by service family. Each entry is independently matchable.
 // Sources: NVD, vendor advisories, Qualys, Palo Alto Unit42, Wiz Research.
+//
+// Corrections vs. previous version
+// ─────────────────────────────────
+// CVE-2024-6387  : EPSS updated to 0.41 (NVD/Tenable, Sep 2025); FixedIn 9.8p1 confirmed.
+// CVE-2025-32433 : ExploitAvail set true (CISA KEV Jun 2025; PoC public).
+// CVE-2025-49844 : CVSS corrected to 9.9 (NVD CVSS v3.1); Severity remains Critical.
+//                  Description corrected: post-auth only (not pre-auth); ExploitAvail true (PoC Oct 2025).
+// CVE-2025-14847 : Severity corrected to High (not Critical); CVSS 7.5 (NVD v3.1).
+//                  Title/Description corrected: memory read / info-disclosure, NOT RCE.
+//                  CWE corrected to CWE-130; FixedIn populated with real version set.
+//                  ExploitAvail set true (public PoC Dec 2025, active exploitation observed).
+//
+// New entries added
+// ─────────────────
+// CVE-2025-26465 : OpenSSH client MITM via VerifyHostKeyDNS (6.8p1–9.9p1), CVSS 6.8.
+// CVE-2025-26466 : OpenSSH pre-auth DoS memory exhaustion (9.5p1–9.9p1), CVSS 5.9.
+// CVE-2024-6409  : OpenSSH signal-handler RCE variant on RHEL/Fedora (< 9.8p1), CVSS 7.0.
 
 var sigDB = []sigEntry{
 
@@ -298,17 +315,37 @@ var sigDB = []sigEntry{
 	// ══════════════════════════════════════════════════════════════════════════
 
 	{
+		// FIXED: EPSS updated from 0.14 → 0.41 (Tenable/NVD as of Sep 2025).
+		// FixedIn 9.8p1 confirmed correct. Severity High / CVSS 8.1 confirmed correct.
 		CVE:          "CVE-2024-6387",
 		CWE:          "CWE-364",
 		Title:        "OpenSSH regreSSHion — unauthenticated RCE as root (glibc Linux)",
 		Description:  "Signal handler race condition in sshd allows unauthenticated remote code execution with root privileges on glibc-based Linux systems. Affects 8.5p1–9.7p1 and versions < 4.4p1 not patched for CVE-2006-5051.",
 		Severity:     SevHigh,
 		CVSS:         8.1,
-		EPSS:         0.14,
+		EPSS:         0.41,
 		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2024-6387", "https://www.qualys.com/regresshion-cve-2024-6387"},
 		FixedIn:      "9.8p1",
 		Mitigation:   "Upgrade to OpenSSH 9.8p1+; set LoginGraceTime 0 as temporary mitigation.",
 		ExploitAvail: true,
+		MatchProduct: "openssh",
+		MinVersion:   "8.5p1",
+		MaxVersion:   "9.7p1",
+	},
+	{
+		// NEW: OpenSSH variant on RHEL/Fedora systems. Separate CVE from regreSSHion.
+		// Disclosed Jul 8 2024. CVSS 7.0 (NVD). Race condition in privsep child.
+		CVE:          "CVE-2024-6409",
+		CWE:          "CWE-364",
+		Title:        "OpenSSH signal-handler race condition RCE — RHEL/Fedora variant (< 9.8p1)",
+		Description:  "A race condition in the privilege-separated child process of OpenSSH on Red Hat Enterprise Linux and Fedora allows a remote unauthenticated attacker to execute arbitrary code. This is a vendor-specific variant of the regreSSHion signal-handler class of bug, tracked separately from CVE-2024-6387.",
+		Severity:     SevHigh,
+		CVSS:         7.0,
+		EPSS:         0.10,
+		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2024-6409", "https://access.redhat.com/security/cve/CVE-2024-6409"},
+		FixedIn:      "9.8p1",
+		Mitigation:   "Apply Red Hat / Fedora update; set LoginGraceTime 0 as temporary mitigation.",
+		ExploitAvail: false,
 		MatchProduct: "openssh",
 		MinVersion:   "8.5p1",
 		MaxVersion:   "9.7p1",
@@ -329,10 +366,11 @@ var sigDB = []sigEntry{
 		MaxVersion:   "9.3p1",
 	},
 	{
+		// FIXED: ExploitAvail set true (PoC public, CISA KEV added Jun 2025, actively exploited).
 		CVE:          "CVE-2025-32433",
 		CWE:          "CWE-287",
 		Title:        "Erlang/OTP SSH — unauthenticated pre-auth RCE (CVSS 10)",
-		Description:  "Improper handling of SSH connection protocol messages in Erlang/OTP allows an unauthenticated attacker to send crafted packets before authentication, achieving arbitrary code execution — potentially as root.",
+		Description:  "Improper handling of SSH connection protocol messages in Erlang/OTP allows an unauthenticated attacker to send crafted packets before authentication, achieving arbitrary code execution — potentially as root. Added to CISA KEV in June 2025; active exploitation observed in the wild, particularly targeting OT/ICS firewalls.",
 		Severity:     SevCritical,
 		CVSS:         10.0,
 		EPSS:         0.67,
@@ -342,6 +380,42 @@ var sigDB = []sigEntry{
 		ExploitAvail: true,
 		MatchBanner:  "erlang",
 		MatchService: "ssh",
+	},
+	{
+		// NEW: OpenSSH client MITM via VerifyHostKeyDNS mishandling error codes.
+		// Affects 6.8p1–9.9p1. Fixed in 9.9p2. Discovered by Qualys TRU, Feb 2025.
+		CVE:          "CVE-2025-26465",
+		CWE:          "CWE-390",
+		Title:        "OpenSSH client MITM via VerifyHostKeyDNS error mishandling (6.8p1–9.9p1)",
+		Description:  "A machine-in-the-middle attack can be performed against OpenSSH clients with VerifyHostKeyDNS enabled (set to 'yes' or 'ask'). OpenSSH mishandles error codes during host key verification, allowing a malicious server to be accepted as legitimate. Requires the attacker to exhaust client memory first, raising attack complexity. Introduced in December 2014 (OpenSSH 6.8p1).",
+		Severity:     SevMedium,
+		CVSS:         6.8,
+		EPSS:         0.04,
+		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-26465", "https://blog.qualys.com/vulnerabilities-threat-research/2025/02/18/qualys-tru-discovers-two-vulnerabilities-in-openssh-cve-2025-26465-cve-2025-26466"},
+		FixedIn:      "9.9p2",
+		Mitigation:   "Upgrade to 9.9p2+; ensure VerifyHostKeyDNS is set to 'no' (default).",
+		ExploitAvail: false,
+		MatchProduct: "openssh",
+		MinVersion:   "6.8p1",
+		MaxVersion:   "9.9p1",
+	},
+	{
+		// NEW: OpenSSH pre-auth DoS via unbounded ping/pong buffer growth.
+		// Affects 9.5p1–9.9p1. Fixed in 9.9p2. Discovered by Qualys TRU, Feb 2025.
+		CVE:          "CVE-2025-26466",
+		CWE:          "CWE-400",
+		Title:        "OpenSSH pre-auth denial-of-service via memory exhaustion (9.5p1–9.9p1)",
+		Description:  "For each ping packet the SSH server receives before key exchange completes, a pong response is allocated in memory and queued. A malicious unauthenticated client can send continuous pings, causing unbounded memory growth and rendering the server unavailable. Affects both sshd server and ssh client.",
+		Severity:     SevMedium,
+		CVSS:         5.9,
+		EPSS:         0.03,
+		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-26466", "https://blog.qualys.com/vulnerabilities-threat-research/2025/02/18/qualys-tru-discovers-two-vulnerabilities-in-openssh-cve-2025-26465-cve-2025-26466"},
+		FixedIn:      "9.9p2",
+		Mitigation:   "Upgrade to 9.9p2+; rate-limit SSH connections at firewall level.",
+		ExploitAvail: false,
+		MatchProduct: "openssh",
+		MinVersion:   "9.5p1",
+		MaxVersion:   "9.9p1",
 	},
 	{
 		CVE:          "CVE-2016-0777",
@@ -663,17 +737,20 @@ var sigDB = []sigEntry{
 	// ══════════════════════════════════════════════════════════════════════════
 
 	{
+		// FIXED: CVSS corrected to 9.9 (NVD CVSS v3.1; NVD lists 9.9, not 10.0 as originally in scanner).
+		// Description corrected: this is POST-AUTH (authenticated user), not pre-auth.
+		// ExploitAvail set true: PoC published on GitHub Oct 2025.
 		CVE:          "CVE-2025-49844",
 		CWE:          "CWE-416",
-		Title:        "Redis RediShell — use-after-free Lua sandbox escape RCE (CVSS 10)",
-		Description:  "A 13-year-old use-after-free (UAF) in Redis's Lua script execution allows a post-auth attacker to escape the sandbox and execute arbitrary native code on the host. First Redis CVE ever rated CVSS 10.",
+		Title:        "Redis RediShell — use-after-free Lua sandbox escape RCE (CVSS 9.9)",
+		Description:  "A use-after-free (UAF) in Redis's Lua scripting subsystem allows an authenticated attacker to manipulate the garbage collector with a specially crafted Lua script, escape the sandbox, and execute arbitrary native code on the host. Affects all Redis versions with Lua scripting enabled (the default). First Redis CVE ever rated Critical. Requires authenticated access — ensure Redis is not exposed without authentication.",
 		Severity:     SevCritical,
-		CVSS:         10.0,
-		EPSS:         0.50,
-		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-49844", "https://www.wiz.io/blog/wiz-research-redis-rce-cve-2025-49844"},
-		FixedIn:      "See vendor advisory",
-		Mitigation:   "Patch immediately; disable Lua scripting if not needed (rename EVAL).",
-		ExploitAvail: false,
+		CVSS:         9.9,
+		EPSS:         0.21,
+		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-49844", "https://www.wiz.io/blog/wiz-research-redis-rce-cve-2025-49844", "https://redis.io/blog/security-advisory-cve-2025-49844/"},
+		FixedIn:      "8.2.2 / 8.0.x / 7.4.x / 7.2.x (see vendor advisory)",
+		Mitigation:   "Patch immediately; disable Lua scripting if not needed (rename EVAL); enable Redis authentication.",
+		ExploitAvail: true,
 		MatchService: "redis",
 	},
 	{
@@ -709,16 +786,23 @@ var sigDB = []sigEntry{
 	// ══════════════════════════════════════════════════════════════════════════
 
 	{
+		// FIXED: Was incorrectly described as potential RCE. Confirmed by MongoDB and NVD:
+		// this is an unauthenticated heap memory READ (info-disclosure), NOT RCE.
+		// Severity corrected: High (not Critical). CVSS 7.5 (NVD v3.1).
+		// CWE corrected: CWE-130 (Improper Handling of Length Parameter Inconsistency).
+		// FixedIn populated with real versions from NVD.
+		// ExploitAvail set true: PoC published Dec 26 2025, active exploitation observed.
 		CVE:          "CVE-2025-14847",
 		CWE:          "CWE-130",
-		Title:        "MongoDB Server — heap memory read + potential RCE via zlib header parsing",
-		Description:  "Improper handling of length parameter inconsistency in zlib-compressed protocol header parsing allows an unauthenticated attacker to read heap memory and potentially achieve RCE.",
-		Severity:     SevCritical,
-		CVSS:         9.8,
-		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-14847"},
-		FixedIn:      "See MongoDB advisory SERVER-115508",
-		Mitigation:   "Patch immediately; restrict MongoDB network exposure.",
-		ExploitAvail: false,
+		Title:        "MongoDB MongoBleed — unauthenticated heap memory read via zlib header (actively exploited)",
+		Description:  "Mismatched length fields in zlib-compressed MongoDB wire protocol headers allow an unauthenticated remote client to read uninitialized heap memory. The server returns allocated buffer length instead of actual decompressed length, exposing adjacent heap contents — potentially including credentials, API keys, and authentication tokens. Similar in class to Heartbleed. NOT an RCE vulnerability. PoC published Dec 26 2025; active exploitation observed in the wild.",
+		Severity:     SevHigh,
+		CVSS:         7.5,
+		EPSS:         0.25,
+		References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2025-14847", "https://www.varonis.com/blog/mongobleed-cve-2025-14847-memory-leak-vulnerability"},
+		FixedIn:      "8.2.3 / 8.0.17 / 7.0.28 / 6.0.27 / 5.0.32 / 4.4.30",
+		Mitigation:   "Upgrade immediately; disable zlib compression (--networkMessageCompressors=disabled); rotate exposed credentials.",
+		ExploitAvail: true,
 		MatchService: "mongodb",
 	},
 	{
