@@ -22,6 +22,13 @@ const (
 	maxHTTPBody       = 8192
 )
 
+// httpPorts lists ports that should be probed as plain HTTP first.
+var httpPorts = map[int]bool{
+	80: true, 8080: true, 8000: true, 8008: true,
+	8888: true, 8880: true, 3000: true, 5000: true,
+	4000: true, 9000: true, 7000: true, 7001: true,
+}
+
 func grabProtocolBanner(ip string, port int, proto protocol.Protocol, timeout time.Duration) string {
 	switch proto {
 	case protocol.TCP:
@@ -44,6 +51,13 @@ func grabProtocolBanner(ip string, port int, proto protocol.Protocol, timeout ti
 }
 
 func grabTCPBanner(ip string, port int, timeout time.Duration) string {
+	// Fast-path: well-known HTTP ports → go straight to HTTP probe (captures title).
+	if httpPorts[port] {
+		if banner := grabHTTPBannerWithBody(ip, port, timeout); banner != "" {
+			return banner
+		}
+	}
+
 	addr := net.JoinHostPort(ip, fmt.Sprint(port))
 
 	conn, err := net.DialTimeout("tcp", addr, timeout)
@@ -55,11 +69,17 @@ func grabTCPBanner(ip string, port int, timeout time.Duration) string {
 	conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
 
 	buf := make([]byte, 4096)
-
 	n, err := conn.Read(buf)
 	if err == nil && n > 0 {
 		data := buf[:n]
 		service := detectTCPService(data, port)
+
+		// If the server opened with an HTTP response, re-probe as HTTP for full info + title.
+		if looksLikeHTTP(data) {
+			if banner := grabHTTPBannerWithBody(ip, port, timeout); banner != "" {
+				return banner
+			}
+		}
 
 		result := fmt.Sprintf("[%s] [Length: %d]", service, n)
 
@@ -90,6 +110,12 @@ func grabTCPBanner(ip string, port int, timeout time.Duration) string {
 				data := buf[:n]
 				service := detectTCPService(data, port)
 
+				if looksLikeHTTP(data) {
+					if banner := grabHTTPBannerWithBody(ip, port, timeout); banner != "" {
+						return banner
+					}
+				}
+
 				result := fmt.Sprintf("[%s] [Length: %d]", service, n)
 
 				info := parseTCPBanner(data, service)
@@ -112,30 +138,103 @@ func grabTCPBanner(ip string, port int, timeout time.Duration) string {
 	return httpProbeWithBody(conn, ip, timeout)
 }
 
+// looksLikeHTTP returns true when raw bytes start with an HTTP status line.
+func looksLikeHTTP(b []byte) bool {
+	s := string(b)
+	return strings.HasPrefix(s, "HTTP/")
+}
+
+// grabHTTPBannerWithBody dials a fresh TCP connection and issues a proper GET,
+// returning status, headers, and the page title — identical to grabHTTPSBannerWithBody
+// but over plain HTTP.
+func grabHTTPBannerWithBody(ip string, port int, timeout time.Duration) string {
+	addr := net.JoinHostPort(ip, fmt.Sprint(port))
+
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		return ""
+	}
+
+	req.Host = ip
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Connection", "close")
+
+	conn.SetDeadline(time.Now().Add(timeout))
+
+	if err := req.Write(conn); err != nil {
+		return ""
+	}
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
+	if err != nil {
+		return ""
+	}
+
+	return buildHTTPBanner(resp, body)
+}
+
+// buildHTTPBanner assembles the banner string from an HTTP response and body.
+// Shared by grabHTTPBannerWithBody and grabHTTPSBannerWithBody.
+func buildHTTPBanner(resp *http.Response, body []byte) string {
+	title := extractTitle(body)
+	contentLength := resp.ContentLength
+	if contentLength == -1 {
+		contentLength = int64(len(body))
+	}
+
+	server := resp.Header.Get("Server")
+	contentType := resp.Header.Get("Content-Type")
+	poweredBy := resp.Header.Get("X-Powered-By")
+
+	result := fmt.Sprintf("[HTTP] [%s %d %s]",
+		resp.Proto, resp.StatusCode, http.StatusText(resp.StatusCode))
+	result += fmt.Sprintf(" [Length: %d]", contentLength)
+
+	if server != "" {
+		result += fmt.Sprintf(" [Server: %s]", server)
+	}
+	if contentType != "" {
+		result += fmt.Sprintf(" [Content-Type: %s]", contentType)
+	}
+	if poweredBy != "" {
+		result += fmt.Sprintf(" [X-Powered-By: %s]", poweredBy)
+	}
+	if title != "" {
+		result += fmt.Sprintf(" [Title: %s]", title)
+	}
+
+	return result
+}
+
 func getTCPProbe(port int) string {
 	switch port {
-
 	case 25, 587:
 		return "EHLO scanner\r\n"
-
 	case 110:
 		return "USER test\r\n"
-
 	case 143:
 		return "A001 CAPABILITY\r\n"
-
 	case 21:
 		return "USER anonymous\r\n"
-
 	case 6379:
 		return "PING\r\n"
-
 	case 11211:
 		return "stats\r\n"
-
 	case 9200:
 		return "GET / HTTP/1.0\r\n\r\n"
-
 	default:
 		return ""
 	}
@@ -147,35 +246,27 @@ func detectTCPService(b []byte, port int) string {
 	if strings.HasPrefix(s, "SSH-") {
 		return "SSH"
 	}
-
 	if strings.HasPrefix(s, "220") && strings.Contains(s, "FTP") {
 		return "FTP"
 	}
-
 	if strings.HasPrefix(s, "220") && (strings.Contains(s, "SMTP") || strings.Contains(s, "ESMTP")) {
 		return "SMTP"
 	}
-
 	if strings.HasPrefix(s, "+OK") {
 		return "POP3"
 	}
-
 	if strings.Contains(s, "IMAP") || strings.HasPrefix(s, "* OK") {
 		return "IMAP"
 	}
-
 	if strings.HasPrefix(s, "+PONG") || strings.Contains(s, "Redis") {
 		return "Redis"
 	}
-
 	if len(b) > 5 && b[4] == 0x0a {
 		return "MySQL"
 	}
-
 	if bytes.Contains(b, []byte("RFB ")) {
 		return "VNC"
 	}
-
 	if port == 23 && len(b) > 0 && b[0] == 0xff {
 		return "Telnet"
 	}
@@ -210,7 +301,6 @@ func parseTCPBanner(b []byte, service string) string {
 	first := strings.TrimSpace(lines[0])
 
 	switch service {
-
 	case "SSH":
 		parts := strings.Fields(first)
 		if len(parts) >= 1 {
@@ -220,12 +310,10 @@ func parseTCPBanner(b []byte, service string) string {
 			}
 			return fmt.Sprintf("[Version: %s]", version)
 		}
-
 	case "FTP", "SMTP":
 		if len(first) > 4 {
 			return fmt.Sprintf("[Banner: %s]", truncate(first[4:], 60))
 		}
-
 	case "POP3", "IMAP":
 		return fmt.Sprintf("[Banner: %s]", truncate(first, 60))
 	}
@@ -258,7 +346,6 @@ func truncate(s string, max int) string {
 func httpProbeWithBody(conn net.Conn, host string, timeout time.Duration) string {
 	req, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
-		//log.Printf("[DEBUG] NewRequest error for %s: %v", host, err)
 		return ""
 	}
 
@@ -269,52 +356,22 @@ func httpProbeWithBody(conn net.Conn, host string, timeout time.Duration) string
 	conn.SetDeadline(time.Now().Add(timeout))
 
 	if err := req.Write(conn); err != nil {
-		//log.Printf("[DEBUG] Write error for %s: %v", host, err)
 		return ""
 	}
 
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
-		//log.Printf("[DEBUG] ReadResponse error for %s: %v", host, err)
 		return ""
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
-		//log.Printf("[DEBUG] ReadAll error for %s: %v", host, err)
 		return ""
 	}
 
-	title := extractTitle(body)
-	contentLength := resp.ContentLength
-	if contentLength == -1 {
-		contentLength = int64(len(body))
-	}
-
-	server := resp.Header.Get("Server")
-	contentType := resp.Header.Get("Content-Type")
-	poweredBy := resp.Header.Get("X-Powered-By")
-
-	result := fmt.Sprintf("[%s %d %s]", resp.Proto, resp.StatusCode, http.StatusText(resp.StatusCode))
-	result += fmt.Sprintf(" [Length: %d]", contentLength)
-
-	if server != "" {
-		result += fmt.Sprintf(" [Server: %s]", server)
-	}
-	if contentType != "" {
-		result += fmt.Sprintf(" [Content-Type: %s]", contentType)
-	}
-	if poweredBy != "" {
-		result += fmt.Sprintf(" [X-Powered-By: %s]", poweredBy)
-	}
-	if title != "" {
-		result += fmt.Sprintf(" [Title: %s]", title)
-	}
-
-	//log.Printf("[DEBUG] Success for %s: %s", host, result)
-	return result
+	return buildHTTPBanner(resp, body)
 }
 
 func grabHTTPSBannerWithBody(ip string, port int, timeout time.Duration) string {
@@ -347,8 +404,6 @@ func grabHTTPSBannerWithBody(ip string, port int, timeout time.Duration) string 
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
-		//log.Printf("[DEBUG] ReadResponse error for %s: %v", addr, err)
-
 		return ""
 	}
 	defer resp.Body.Close()
@@ -358,44 +413,17 @@ func grabHTTPSBannerWithBody(ip string, port int, timeout time.Duration) string 
 		return ""
 	}
 
-	title := extractTitle(body)
-	contentLength := resp.ContentLength
-	if contentLength == -1 {
-		contentLength = int64(len(body))
-	}
-
-	server := resp.Header.Get("Server")
-	contentType := resp.Header.Get("Content-Type")
-	poweredBy := resp.Header.Get("X-Powered-By")
-
-	result := fmt.Sprintf("[%s %d %s]", resp.Proto, resp.StatusCode, http.StatusText(resp.StatusCode))
-	result += fmt.Sprintf(" [Length: %d]", contentLength)
-
-	if server != "" {
-		result += fmt.Sprintf(" [Server: %s]", server)
-	}
-	if contentType != "" {
-		result += fmt.Sprintf(" [Content-Type: %s]", contentType)
-	}
-	if poweredBy != "" {
-		result += fmt.Sprintf(" [X-Powered-By: %s]", poweredBy)
-	}
-	if title != "" {
-		result += fmt.Sprintf(" [Title: %s]", title)
-	}
-
-	return result
+	return buildHTTPBanner(resp, body)
 }
 
 func extractTitle(body []byte) string {
 	bodyStr := string(body)
 
-	// Case-insensitive search for <title> tag
 	startIdx := strings.Index(strings.ToLower(bodyStr), "<title>")
 	if startIdx == -1 {
 		return ""
 	}
-	startIdx += 7 // length of "<title>"
+	startIdx += 7
 
 	endIdx := strings.Index(strings.ToLower(bodyStr[startIdx:]), "</title>")
 	if endIdx == -1 {
@@ -403,8 +431,6 @@ func extractTitle(body []byte) string {
 	}
 
 	title := strings.TrimSpace(bodyStr[startIdx : startIdx+endIdx])
-
-	// Limit title length and remove newlines/extra spaces
 	title = strings.Join(strings.Fields(title), " ")
 	if len(title) > 100 {
 		title = title[:97] + "..."
@@ -489,19 +515,16 @@ func grabUDPBanner(ip string, port int, timeout time.Duration) string {
 
 func udpProbe(port int) []byte {
 	switch port {
-
-	case 53: // DNS version.bind
+	case 53:
 		return []byte{
 			0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00, 0x07, 0x76, 0x65, 0x72,
 			0x73, 0x69, 0x6f, 0x6e, 0x04, 0x62, 0x69, 0x6e,
 			0x64, 0x00, 0x00, 0x10, 0x00, 0x03,
 		}
-
-	case 123: // NTP
+	case 123:
 		return []byte{0x1b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-
-	case 161: // SNMP sysDescr
+	case 161:
 		return []byte{
 			0x30, 0x26, 0x02, 0x01, 0x00, 0x04, 0x06, 0x70,
 			0x75, 0x62, 0x6c, 0x69, 0x63, 0xa0, 0x19, 0x02,
@@ -509,8 +532,7 @@ func udpProbe(port int) []byte {
 			0x02, 0x01, 0x00, 0x30, 0x0b, 0x30, 0x09, 0x06,
 			0x05, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x05, 0x00,
 		}
-
-	case 5060: // SIP
+	case 5060:
 		return []byte(
 			"OPTIONS sip:test SIP/2.0\r\n" +
 				"Via: SIP/2.0/UDP scanner\r\n" +
@@ -519,7 +541,6 @@ func udpProbe(port int) []byte {
 				"Call-ID: scan\r\n" +
 				"CSeq: 1 OPTIONS\r\n" +
 				"Content-Length: 0\r\n\r\n")
-
 	default:
 		return []byte{0x00}
 	}
@@ -529,10 +550,8 @@ func parseUDPBanner(port int, data []byte) string {
 	length := len(data)
 
 	switch port {
-
 	case 53:
 		return fmt.Sprintf("[DNS] [Length: %d]", length)
-
 	case 123:
 		if length >= 48 {
 			version := (data[0] >> 3) & 7
@@ -540,13 +559,11 @@ func parseUDPBanner(port int, data []byte) string {
 			return fmt.Sprintf("[NTP] [Version: %d] [Stratum: %d] [Length: %d]", version, stratum, length)
 		}
 		return fmt.Sprintf("[NTP] [Length: %d]", length)
-
 	case 161:
 		if bytes.Contains(data, []byte("public")) {
 			return fmt.Sprintf("[SNMP] [Community: public] [Length: %d]", length)
 		}
 		return fmt.Sprintf("[SNMP] [Length: %d]", length)
-
 	case 5060:
 		if bytes.Contains(data, []byte("SIP/2.0")) {
 			line := strings.SplitN(string(data), "\r\n", 2)[0]
